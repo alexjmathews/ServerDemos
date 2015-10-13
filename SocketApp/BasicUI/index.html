@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+
+<html>
+
+  <head>
+    <!-- Bootstrap and Font Awesome -->
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/font-awesome/4.0.0/css/font-awesome.css" />
+
+    <!-- Angular and ngroute -->
+    <script src="http://ajax.googleapis.com/ajax/libs/angularjs/1.2.25/angular.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/angularjs/1.2.25/angular-route.js"></script>
+
+    <!-- app.js File -->
+    <script src="ng-app.js"></script>
+    <script src="views/home/homeView.js"></script>
+    <script src="views/about/aboutView.js"></script>
+  </head>
+
+  <!-- define angular controller -->
+  <body>
+
+    <nav class="navbar navbar-default">
+      <div class="container">
+        <div class="navbar-header">
+          <a class="navbar-brand" href="/">HTTP Use Demo</a>
+        </div>
+
+        <ul class="nav navbar-nav navbar-right">
+          <li><a href="#"><i class="fa fa-home"></i> Home</a></li>
+          <li><a href="#about"><i class="fa fa-shield"></i> About</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <div id="main" ng-app="ngApp">
+      <!-- Template Injected here -->
+      <div ng-view></div>
+    </div>
+
+    <!-- Footer for the site -->
+    <div class="footer navbar-fixed-bottom text-center">
+      <p>This is a demo application for using HTTP Requests with Angular - Alex Mathews</p>
+    </div>
+
+  </body>
+
+</html>
