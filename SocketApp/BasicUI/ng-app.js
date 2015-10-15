@@ -9,6 +9,3 @@ ngApp.config(function($routeProvider) {
   $routeProvider.otherwise({redirectTo: '/'});
 });
 
-
-
-

@@ -1,5 +1,5 @@
 var homeView = angular.module('ngApp.homeView', ['ngRoute']);
-
+var socket = io.connect('http://localhost:3000');
 homeView.config(['$routeProvider', function($routeProvider) {
   $routeProvider
   	//route to home
