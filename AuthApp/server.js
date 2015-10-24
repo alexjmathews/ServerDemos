@@ -37,10 +37,11 @@ app.get('/', function(req, res) {
 // API ROUTES -------------------
 // we'll get to these in a second
 
-app.post('/signup', function(req,res) {
+app.post('/register', function(req,res) {
   //First check if Username is available
+  var lcUsername = req.body.username.toLowerCase();
   User.findOne({
-    username: req.body.username
+    username: lcUsername
   }, function(err, user) {
     if (err) throw err;
 
@@ -55,7 +56,7 @@ app.post('/signup', function(req,res) {
       var userSalt = Math.random().toString(36).substr(2,10); 
       var passHash = sha256(userSalt + req.body.password);
       var nUser = new User({ 
-        username: req.body.username,
+        username: lcUsername,
         email: req.body.email, 
         hash: passHash,
         salt: userSalt,
@@ -90,8 +91,9 @@ apiRoutes.post('/test', function(req,res) {
 // route to authenticate a user (POST http://localhost:8080/api/authenticate)
 apiRoutes.post('/authenticate', function(req, res) {
   // find the user
+  var lcUsername = req.body.username.toLowerCase();
   User.findOne({
-    username: req.body.username
+    username: lcUsername
   }, function(err, user) {
     if (err) throw err;
 
@@ -107,7 +109,7 @@ apiRoutes.post('/authenticate', function(req, res) {
         // if user is found and password is right
         // create a token
         var tokenBody = {
-          username : req.body.username,
+          username : lcUsername,
           info: 'extra token info would go here'
         };
 
