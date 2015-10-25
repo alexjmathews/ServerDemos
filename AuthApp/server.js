@@ -7,6 +7,7 @@ var bodyParser  = require('body-parser');
 var morgan      = require('morgan');
 var mongoose    = require('mongoose');
 var sha256 = require('js-sha256');
+var cors = require('cors');
 
 var jwt    = require('jsonwebtoken'); // used to create, sign, and verify tokens
 var config = require('./config'); // get our config file
@@ -26,12 +27,18 @@ app.use(bodyParser.json());
 // use morgan to log requests to the console
 app.use(morgan('dev'));
 
+
+app.use(cors());
+///need to configure cors ////////////
+
 // =======================
 // routes ================
 // =======================
 // basic route
+
+
 app.get('/', function(req, res) {
-    res.send('Hello! The API is at http://localhost:' + port + '/api');
+  res.send('Hello! The API is at http://localhost:' + port + '/api');
 });
 
 // API ROUTES -------------------
@@ -39,6 +46,8 @@ app.get('/', function(req, res) {
 
 app.post('/register', function(req,res) {
   //First check if Username is available
+  /////// need to confirm all data is there
+
   var lcUsername = req.body.username.toLowerCase();
   User.findOne({
     username: lcUsername
@@ -77,8 +86,8 @@ app.post('/register', function(req,res) {
 });
 
 var apiRoutes = express.Router(); 
-
 apiRoutes.post('/test', function(req,res) {
+
   res.json({
     success: true,
     message: 'Hello from test'
@@ -91,6 +100,7 @@ apiRoutes.post('/test', function(req,res) {
 // route to authenticate a user (POST http://localhost:8080/api/authenticate)
 apiRoutes.post('/authenticate', function(req, res) {
   // find the user
+
   var lcUsername = req.body.username.toLowerCase();
   User.findOne({
     username: lcUsername
