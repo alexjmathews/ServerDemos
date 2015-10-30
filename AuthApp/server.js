@@ -8,17 +8,18 @@ var morgan      = require('morgan');
 var mongoose    = require('mongoose');
 var sha256 = require('js-sha256');
 var cors = require('cors');
+var request = require('request');
 
-var jwt    = require('jsonwebtoken'); // used to create, sign, and verify tokens
-var config = require('./config'); // get our config file
-var User   = require('./app/models/user'); // get our mongoose model
+var jwt    = require('jsonwebtoken'); 
+var config = require('./config'); 
+var User   = require('./app/models/user'); 
     
 // =======================
 // configuration =========
 // =======================
 var port = process.env.PORT || 8080; // used to create, sign, and verify tokens
 mongoose.connect(config.database); // connect to database
-app.set('jwtSecret', config.secret); // secret variable
+app.set('jwtSecret', config.secret); // get secret variable
 
 // use body parser so we can get info from POST and/or URL parameters
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -29,7 +30,7 @@ app.use(morgan('dev'));
 
 
 app.use(cors());
-///need to configure cors ////////////
+///need to configure cors!!!!!!! ////////////
 
 // =======================
 // routes ================
@@ -38,78 +39,190 @@ app.use(cors());
 
 
 app.get('/', function(req, res) {
-  res.send('Hello! The API is at http://localhost:' + port + '/api');
+  res.send('Hello! The Auth API is at http://localhost:' + port + '/api');
 });
 
 // API ROUTES -------------------
-// we'll get to these in a second
 
 app.post('/register', function(req,res) {
   //First check if Username is available
-  /////// need to confirm all data is there
-
+  /////// need to confirm all data is there Error will be thrown now!!!!!!!!!!!
+  /////// need to verify data integrity
   var lcUsername = req.body.username.toLowerCase();
-  User.findOne({
-    username: lcUsername
-  }, function(err, user) {
+  var lcEmail = req.body.email.toLowerCase();
+  User.findOne({username: lcUsername}, function(err, uUser) {
     if (err) throw err;
 
-    if (user) {
+    if (uUser) {
       //Username taken
       res.json({ 
         success: false, 
         message: 'Username Unavailable.' 
       });
-    } else if (!user) {
-      //Username available, generate and save user
-      var userSalt = Math.random().toString(36).substr(2,10); 
-      var passHash = sha256(userSalt + req.body.password);
-      var nUser = new User({ 
-        username: lcUsername,
-        email: req.body.email, 
-        hash: passHash,
-        salt: userSalt,
-        admin: true 
-      });
-
-      nUser.save(function(err) {
+    } else if (!uUser) {
+      User.findOne({email: lcEmail}, function(err, user) {
         if (err) throw err;
 
-        res.json({
-          success: true,
-          message: 'New user created'
-        });
+        if (user) {
+          //Username taken
+          res.json({ 
+            success: false, 
+            message: 'Email taken.' 
+          });
+        } else if (!user) {
+          //Username available, generate and save user
+          var userSalt = Math.random().toString(36).substr(2,10); 
+          var passHash = sha256(userSalt + req.body.password);
+          var nUser = new User({ 
+            username: lcUsername,
+            email: req.body.email, 
+            hash: passHash,
+            salt: userSalt,
+            instructor: false,
+            google: false
+          });
+
+          nUser.save(function(err) {
+            if (err) throw err;
+
+            res.json({
+              success: true,
+              message: 'New user created'
+            });
+          });
+          
+        }
       });
-      
+    }
+
+  });
+});
+
+
+app.post('/google-register', function(req,res) {
+  //First check if Username is available
+  /////// need to confirm all data is there Error will be thrown now!!!!!!!!!!!
+  /////// need to verify data integrity
+  var lcUsername = req.body.username.toLowerCase();
+  var googToken = req.body.googToken;
+
+  console.log("touched google authenticate");
+  var concat = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + googToken;
+  console.log(concat);
+  request(concat, function (error, response, body) {
+    if (!error && response.statusCode == 200) {
+      var theBody = JSON.parse(body);
+      var lcEmail = theBody.email.toLowerCase();
+      console.log(theBody);  
+      User.findOne({username: lcUsername}, function(err, uUser) {
+        if (err) throw err;
+
+        if (uUser) {
+          //Username taken
+          res.json({ 
+            success: false, 
+            message: 'Username Unavailable.' 
+          });
+        } else if (!uUser) {
+          User.findOne({email: lcEmail}, function(err, user) {
+            if (err) throw err;
+
+            if (user) {
+              //Username taken
+              res.json({ 
+                success: false, 
+                message: 'Email already registered.' 
+              });
+            } else if (!user) {
+              //Username available, generate and save user
+              var nUser = new User({ 
+                username: lcUsername,
+                email: lcEmail, 
+                hash: "",
+                salt: "",
+                instructor: false,
+                google: true
+              });
+
+              nUser.save(function(err) {
+                if (err) throw err;
+
+                res.json({
+                  success: true,
+                  message: 'New user created'
+                });
+              });
+              
+            }
+          });
+        }
+      });
     }
   });
 });
 
 var apiRoutes = express.Router(); 
-apiRoutes.post('/test', function(req,res) {
 
-  res.json({
-    success: true,
-    message: 'Hello from test'
-  });
+apiRoutes.post('/google-authenticate', function(req, res) {
+  // find the user
+  var googToken = req.body.googToken;
+  console.log("touched google authenticate");
+  var concat = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + googToken;
+  console.log(concat);
+  request(concat, function (error, response, body) {
+    if (!error && response.statusCode == 200) {
+      var theBody = JSON.parse(body);
+      var lcEmail = theBody.email.toLowerCase();
+      console.log(theBody);
+      User.findOne({
+        email: lcEmail
+      }, function(err, user) {
+        if (err) throw err;
+
+        if (!user) {
+          res.json({ success: false, message: 'Authentication failed. User not found.' });
+        } else if (user) {
+
+          var tokenBody = {
+            username : user.username,
+            info: 'extra token info would go here'
+          };
+
+          var token = jwt.sign(tokenBody, app.get('jwtSecret'), {
+            algorithm: "HS256", 
+            expiresIn: 1800
+          });
+
+          // return the information including token as JSON
+          res.json({
+            success: true,
+            username: user.username,
+            message: 'Token for Authorization',
+            token: token
+          });
+            
+
+        }
+
+      });
+    }
+  })
 });
 
-// TODO: route to authenticate a user (POST http://localhost:8080/api/authenticate)
-
-// TODO: route middleware to verify a token
-// route to authenticate a user (POST http://localhost:8080/api/authenticate)
 apiRoutes.post('/authenticate', function(req, res) {
   // find the user
-
-  var lcUsername = req.body.username.toLowerCase();
+  var lcEmail = req.body.email.toLowerCase();
   User.findOne({
-    username: lcUsername
+    email: lcEmail
   }, function(err, user) {
     if (err) throw err;
 
     if (!user) {
       res.json({ success: false, message: 'Authentication failed. User not found.' });
-    } else if (user) {
+    } else if (user.google) {
+      res.json({ success: false, message: 'Authentication failed. You logged in through google.' });
+    }
+    else if (user) {
 
       // check if password matches
       var passHash = sha256(user.salt + req.body.password);
@@ -119,18 +232,19 @@ apiRoutes.post('/authenticate', function(req, res) {
         // if user is found and password is right
         // create a token
         var tokenBody = {
-          username : lcUsername,
+          username : user.username,
           info: 'extra token info would go here'
         };
 
         var token = jwt.sign(tokenBody, app.get('jwtSecret'), {
           algorithm: "HS256", 
-          expiresIn: 30
+          expiresIn: 1800
         });
 
         // return the information including token as JSON
         res.json({
           success: true,
+          username: user.username,
           message: 'Token for Authorization',
           token: token
         });
@@ -141,6 +255,8 @@ apiRoutes.post('/authenticate', function(req, res) {
   });
 });
 
+
+//authentication middleware here
 apiRoutes.use(function(req, res, next) {
 
   // check header or url parameters or post parameters for token

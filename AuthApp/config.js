@@ -1,6 +1,6 @@
 module.exports = {
 
-    'secret': 'newsecret',
+    'secret': 'ivnalcihqcbnqizn',
     'database': 'mongodb://localhost:27017'
 
 };

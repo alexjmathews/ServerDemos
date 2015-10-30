@@ -8,5 +8,6 @@ module.exports = mongoose.model('User', new Schema({
     email: String,
     hash: String, 
     salt: String,
-    admin: Boolean 
+    instructor: Boolean,
+    google: Boolean
 }));
