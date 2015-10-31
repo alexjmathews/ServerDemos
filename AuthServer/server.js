@@ -4,10 +4,11 @@ var app         = express();
 var mongoose    = require('mongoose');
 var bodyParser  = require('body-parser');
 var morgan      = require('morgan');
-var cors 		= require('cors');
-var sha256 		= require('js-sha256');
-var uuid		= require('uuid');
-var config 		= require('./config'); 
+var cors        = require('cors');
+var sha256      = require('js-sha256');
+var jwt         = require('jsonwebtoken'); 
+var uuid        = require('uuid');
+var config      = require('./config'); 
 
 
 // ### Setting up various variables
@@ -23,7 +24,7 @@ app.use(morgan('dev'));
 app.use(cors());
 ///need to configure cors!!!!!!! ////////////!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 var User = require('./app/models/user'); 
-
+var apiRoutes = express.Router(); 
 
 // ###Routes ----------------------------------------------------------------------
 app.get('/', function(req, res) {
@@ -55,7 +56,7 @@ app.get('/all-users', function(req, res) {
  *    + fields confirmed to exist except insitution 
  *    + email validated, names titlecased
  */
-app.post('/local-register', function(req,res) {
+apiRoutes.post('/local-register', function(req,res) {
   //Data Verification
   var nEmail = req.body.email;
   var nUsername = req.body.username;
@@ -72,7 +73,7 @@ app.post('/local-register', function(req,res) {
       message: 'One or more required field was missing.',
       requiredFields: 'email:str (unique), username:str, firstName:stf, lastName:str, password:str, instructor:bool',
       optionalFields: 'institution'
-    })
+    });
   } else if (!validEmail(nEmail)) {
     res.json({
       success: false,
@@ -130,7 +131,7 @@ app.post('/local-register', function(req,res) {
 
               res.json({
                 success: true,
-                message: 'New user created'
+                message: 'New user created.'
               });
             });//user save
           }
@@ -141,10 +142,81 @@ app.post('/local-register', function(req,res) {
 });//local registration
 
 /*
+ * Authentication via local strategy.
+ * Requires: email, password
+ * Issues:
+ *  -tokens expire in 30 min (change this!)
+ */
+apiRoutes.post('/local-authenticate', function(req,res) {
+  var candidateEmail = req.body.email;
+  var candidatePassword = req.body.password;
+  if (!candidateEmail || !candidatePassword) {
+    res.json({
+      success: false,
+      message: 'One or more required field was missing.',
+      requiredFields: 'email:str, password:str'
+    });
+  } else if (!validEmail(candidateEmail)) {
+    res.json({
+      success: false,
+      message: 'Email invalid.'
+    });
+  } else {
+    User.findOne({'local.email': candidateEmail}, function(err, localUser) {
+      if (err) throw err;
+      
+      if (!localUser) {
+        User.findOne({'google.email': candidateEmail}, function(err, googleUser) {
+          if (googleUser) {
+            res.json({
+              success: false,
+              message: 'Please log in using Google.'
+            });
+          } else {
+            res.json({
+              success: false,
+              message: 'User does not exist.'
+            });
+          }
+        });
+      } else {
+        var passHash = sha256(localUser.local.salt + candidatePassword);
+        if (localUser.local.hash != passHash) {
+          res.json({
+            success: false,
+            message: 'Incorrect password.'
+          });
+        } else {
+          var tokenBody = {
+            username  : localUser.username,
+            uuid      : localUser.uuid, 
+            info      : 'extra token info would go here'
+          };
+
+          var token = jwt.sign(tokenBody, app.get('jwtSecret'), {
+            algorithm: "HS256", 
+            expiresIn: 1800 //30 min
+          });
+
+          // return the information including token as JSON
+          res.json({
+            success     : true,
+            username    : localUser.username,
+            firstName   : localUser.firstName,
+            lastName    : localUser.lastName,
+            message     : 'Token for Authorization',
+            token       : token
+          });
+        }
+      }
+    }); //local search
+  }
+});
+
+/*
  * Switches string to Title Case formatting. User for correcting capitalization for names.
  */
-function toTitleCase(str)
-{
+function toTitleCase(str) {
     return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
 }
 
@@ -156,14 +228,6 @@ function validEmail(email) {
     return re.test(email);
 }
 
-
-
-
-
-id = uuid.v4();
-console.log(id);
-
-
 //Find Methods
 // User.find({'local.email': 'alexmathews@yahoo.com'}, function(err, users) {
 //   if (err) throw err;
@@ -172,13 +236,9 @@ console.log(id);
 //   console.log(users);
 // });
 
-// User.find({}, function(err, users) {
-//   if (err) throw err;
 
-//   // object of all the users
-//   console.log(users);
-// });
-
+// apply the routes to our application with the prefix /api
+app.use('/api', apiRoutes);
 
 //Run Server
 app.listen(port);

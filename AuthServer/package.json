@@ -13,6 +13,7 @@
     "cors": "^2.7.1",
     "express": "^4.13.3",
     "js-sha256": "^0.3.0",
+    "jsonwebtoken": "^5.4.1",
     "mongoose": "^4.2.3",
     "morgan": "^1.6.1",
     "request": "^2.65.0",
