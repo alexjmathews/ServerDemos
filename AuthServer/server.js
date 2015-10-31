@@ -31,112 +31,138 @@ app.get('/', function(req, res) {
 	res.send('Hello! The Auth API is at http://localhost:' + port + userSalt);
 });
 
+app.get('/all-users', function(req, res) {
+  User.find({}, function(err, users) {
+    if (err) throw err;
+
+    // object of all the users
+    console.log(users);
+    res.json(
+      users
+    );
+
+  });
+});
 
 /*
  * Local Strategy Registration - generates UUID for account record
  * Unique Requires: email
- * Requires: username, firstName, lastName, admin
+ * Requires: username, firstName, lastName, instructor, password
  * Optional: institution
  * Issues:
  * 	- Currently set to be verified by default
- *	- Need to verify data integrity
+ *	- Need to verify data integrity 
+ *    + fields confirmed to exist except insitution 
+ *    + email validated, names titlecased
  */
-app.post('/register', function(req,res) {
+app.post('/local-register', function(req,res) {
   //Data Verification
   var nEmail = req.body.email;
   var nUsername = req.body.username;
   var nFirstName = req.body.firstName;
   var nLastName = req.body.lastName;
-  var nAdmin = req.body.admin;
+  var nInstructor = req.body.instructor;
+  var nPassword = req.body.password;
   var nVerified = true;
   var nUUID = uuid.v4();
-  console.log(nUsername);
-  console.log(nLastName);
-  console.log(nAdmin);
-  console.log(nFirstName);
 
-  if (!nEmail || !nUsername || ! nFirstName || !nLastName || typeof nAdmin === 'undefined') {
-  	res.json({
-  		success: false,
-  		message: 'One or more required field was missing.'
-  	})
+  if (!nEmail || !nUsername || ! nFirstName || !nLastName || !nPassword || typeof nInstructor === 'undefined') {
+    res.json({
+      success: false,
+      message: 'One or more required field was missing.',
+      requiredFields: 'email:str (unique), username:str, firstName:stf, lastName:str, password:str, instructor:bool',
+      optionalFields: 'institution'
+    })
+  } else if (!validEmail(nEmail)) {
+    res.json({
+      success: false,
+      message: 'Email invalid.'
+    });
   } else {
-  	res.json({
-  		success: true,
-  		message: 'go on.'
-  	})
-  }
+    //all fields confirmed, adjust case 
+    nEmail = nEmail.toLowerCase();
+    nUsername = nUsername.toLowerCase();
+    nFirstName = toTitleCase(nFirstName);
+    nLastName = toTitleCase(nLastName);
 
-  
-});
+    //check if local user already exists
+    User.findOne({'local.email': nEmail}, function(err, existingLocalUser) {
+      if (err) throw err;
+      
+      if (existingLocalUser) {
+        res.json({
+          success: false,
+          message: 'Email already in use.'
+        });
+        console.log(existingLocalUser);
+      } else {
+        //check if google user already exists
+        User.findOne({'google.email': nEmail}, function(err, existingGoogleUser) { 
+          if (err) throw err;
+
+          if (existingGoogleUser) {
+            res.json({
+              success: false,
+              message: 'Google account already in use. Please log in through Google.'
+            });
+            console.log(existingGoogleUser);
+          } else {
+            //No existing user ... create account
+            var userSalt = Math.random().toString(36).substr(2,10); 
+            var passHash = sha256(userSalt + nPassword);
+            var nUser = new User({
+              userID: nUUID,
+              username: nUsername,
+              firstName: nFirstName,
+              lastName: nLastName,
+              institution: req.body.institution,
+              instructor: nInstructor,
+              local: {
+                email : nEmail,
+                hash  : passHash, 
+                salt  : userSalt, 
+                verified: true
+              }
+            });
+
+            nUser.save(function(err) {
+              if (err) throw err;
+
+              res.json({
+                success: true,
+                message: 'New user created'
+              });
+            });//user save
+          }
+        });//google find
+      }
+    });//local find
+  }  
+});//local registration
+
+/*
+ * Switches string to Title Case formatting. User for correcting capitalization for names.
+ */
+function toTitleCase(str)
+{
+    return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
+}
+
+/*
+ * Validates email formatting.
+ */
+function validEmail(email) {
+    var re = /^([\w-]+(?:\.[\w-]+)*)@((?:[\w-]+\.)*\w[\w-]{0,66})\.([a-z]{2,6}(?:\.[a-z]{2})?)$/i;
+    return re.test(email);
+}
 
 
-//   var lcUsername = req.body.username.toLowerCase();
-//   var lcEmail = req.body.email.toLowerCase();
-//   User.findOne({username: lcUsername}, function(err, uUser) {
-//     if (err) throw err;
 
-//     if (uUser) {
-//       //Username taken
-//       res.json({ 
-//         success: false, 
-//         message: 'Username Unavailable.' 
-//       });
-//     } else if (!uUser) {
-//       User.findOne({email: lcEmail}, function(err, user) {
-//         if (err) throw err;
 
-//         if (user) {
-//           //Username taken
-//           res.json({ 
-//             success: false, 
-//             message: 'Email taken.' 
-//           });
-//         } else if (!user) {
-//           //Username available, generate and save user
-//           var userSalt = Math.random().toString(36).substr(2,10); 
-//           var passHash = sha256(userSalt + req.body.password);
-//           var nUser = new User({ 
-//             username: lcUsername,
-//             email: req.body.email, 
-//             hash: passHash,
-//             salt: userSalt,
-//             instructor: false,
-//             google: false
-//           });
-
-//           nUser.save(function(err) {
-//             if (err) throw err;
-
-//             res.json({
-//               success: true,
-//               message: 'New user created'
-//             });
-//           });
-          
-//         }
-//       });
-//     }
-
-//   });
-// });
 
 id = uuid.v4();
 console.log(id);
-var testUser = new User({
-    userID: 'jmar777',
-    username: 'jmarasdf777',
-	firstName: 'alex',
-	lastName: 'mathews',
-    institution: 'asdfasdfasdf asdfasdf',
-    instructor: false,
-    local: {
-        email	: 'alexjmathews@yahoo.com',
-	    hash	: 'asldfjkals;df', 
-	    salt	: 'asdfsadfasdf', 
-	    verified: true
-    }
-});
+
 
 //Find Methods
 // User.find({'local.email': 'alexmathews@yahoo.com'}, function(err, users) {
