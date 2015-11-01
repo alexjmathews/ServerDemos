@@ -3,6 +3,7 @@
  * Notes:
  *  - All tokens last for 30 minutes currently to test expiration 
  * Issues:
+ *  - Get rid of users route - unsafe as hell LOL 
  */
 
 
@@ -23,7 +24,7 @@ var emitter     = new events.EventEmitter();
 
 // ### Setting up various variables
 var port = config.port; 
-mongoose.connect(config.database); 
+mongoose.connect(config.authDatabase); 
 app.set('jwtSecret', config.jwtSecret); 
 app.set('tokenExpiration', config.tokenExpiration);
 app.set('googleAuthURLBase', config.googleAuthURLBase);
@@ -235,7 +236,8 @@ apiRoutes.post('/local/authenticate', function(req,res) {
 
 
 /*
- * Local Strategy Frogot - begins forgotten password workflow
+ * Local Strategy Forgot - begins forgotten password workflow
+ * Fogotten password strategy expires in time set in config file
  * Requires: email
  */
 apiRoutes.post('/local/forgot', function(req,res) {
