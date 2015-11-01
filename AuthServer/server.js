@@ -18,7 +18,8 @@ var jwt         = require('jsonwebtoken');
 var uuid        = require('uuid');
 var config      = require('./config'); 
 var request     = require('request');
-
+var events      = require('events');
+var emitter     = new events.EventEmitter();
 
 // ### Setting up various variables
 var port = config.port; 
@@ -26,6 +27,7 @@ mongoose.connect(config.database);
 app.set('jwtSecret', config.jwtSecret); 
 app.set('tokenExpiration', config.tokenExpiration);
 app.set('googleAuthURLBase', config.googleAuthURLBase);
+app.set('forgottenIDExpiration', config.forgottenIDExpiration);
 //Ensuring input in correct format
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -48,7 +50,6 @@ app.get('/all-users', function(req, res) {
     if (err) throw err;
 
     // object of all the users
-    console.log(users);
     res.json(
       users
     );
@@ -209,10 +210,15 @@ apiRoutes.post('/local/authenticate', function(req,res) {
             algorithm: "HS256", 
             expiresIn: app.get('tokenExpiration')
           });
-          // if (localUser.local.isForgotten) {
-          //   localUser
-          // } //////////////////////////////////////////////////////////////
-          // return the information including token as JSON
+          if (localUser.local.isForgotten) {
+            localUser.local.isForgotten = false;
+            localUser.local.forgottenID = '';
+            localUser.local.forgottenSecret = '';
+            localUser.save(function(err) {
+              if (err) throw err;
+            });
+          } 
+          //return the information including token as JSON
           res.json({
             success     : true,
             username    : localUser.username,
@@ -273,13 +279,14 @@ apiRoutes.post('/local/forgot', function(req,res) {
 
           //send an email with id in link here
 
-          console.log("/api/local/reset/" + localUser.local.forgottenID);
           var forgottenSecret = Math.random().toString(36).substr(2,10); 
-          console.log("secret: " + forgottenSecret);
           localUser.local.forgottenSecret = forgottenSecret;
           localUser.save(function(err) {
             if (err) throw err;
-
+            
+            setTimeout(function () {
+              emitter.emit('forgottenIDExpired', localUser.local.forgottenID);
+            }, app.get('forgottenIDExpiration'));
             res.json({
               success: true,
               forgottenSecret: forgottenSecret,
@@ -291,6 +298,27 @@ apiRoutes.post('/local/forgot', function(req,res) {
     });//check for local user under email
   }
 });//local forgotten password workflow
+
+
+/*
+ * Listener for expired forgottenID's
+ * Clears forgotten information schema's local strategy
+ */
+emitter.on('forgottenIDExpired', function(forgottenID)
+{
+    User.findOne({'local.forgottenID': forgottenID}, function(err, localUser) {
+      if (err) throw err;
+      
+      if (localUser) {
+        localUser.local.isForgotten = false;
+        localUser.local.forgottenID = '';
+        localUser.local.forgottenSecret = '';
+        localUser.save(function(err) {
+          if (err) throw err;
+        });
+      }
+    });
+});
 
 
 /*
@@ -308,7 +336,6 @@ apiRoutes.post('/local/reset/', function(req, res) {
       requiredFields: 'forgottenID:str, forgottenSecret:str, password:str'
     });
   } else {
-    console.log("candidateID: " + candidateID);
     User.findOne({'local.forgottenID': candidateID}, function(err, localUser) {
       if (err) throw err;
       
@@ -518,15 +545,6 @@ function validEmail(email) {
     var re = /^([\w-]+(?:\.[\w-]+)*)@((?:[\w-]+\.)*\w[\w-]{0,66})\.([a-z]{2,6}(?:\.[a-z]{2})?)$/i;
     return re.test(email);
 }
-
-//Find Methods
-// User.find({'local.email': 'alexmathews@yahoo.com'}, function(err, users) {
-//   if (err) throw err;
-
-//   // object of all the users
-//   console.log(users);
-// });
-
 
 // apply the routes to our application with the prefix /api
 app.use('/api', apiRoutes);
