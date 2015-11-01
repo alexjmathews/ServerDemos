@@ -166,6 +166,7 @@ var apiRoutes = express.Router();
 apiRoutes.post('/google-authenticate', function(req, res) {
   // find the user
   var googToken = req.body.googToken;
+  console.log("googletoken: " + googToken);
   console.log("touched google authenticate");
   var concat = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + googToken;
   console.log(concat);

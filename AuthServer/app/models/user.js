@@ -18,8 +18,7 @@ var UserSchema = new Schema(
 		    verified: Boolean
 	    },
 		google: {
-	        email	: String,
-	        gID		: String
+	        email	: String
 	    }
 	}
 );

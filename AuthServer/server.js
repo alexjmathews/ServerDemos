@@ -9,6 +9,7 @@ var sha256      = require('js-sha256');
 var jwt         = require('jsonwebtoken'); 
 var uuid        = require('uuid');
 var config      = require('./config'); 
+var request     = require('request');
 
 
 // ### Setting up various variables
@@ -72,7 +73,7 @@ apiRoutes.post('/local-register', function(req,res) {
       success: false,
       message: 'One or more required field was missing.',
       requiredFields: 'email:str (unique), username:str, firstName:stf, lastName:str, password:str, instructor:bool',
-      optionalFields: 'institution'
+      optionalFields: 'institution:str'
     });
   } else if (!validEmail(nEmail)) {
     res.json({
@@ -95,7 +96,6 @@ apiRoutes.post('/local-register', function(req,res) {
           success: false,
           message: 'Email already in use.'
         });
-        console.log(existingLocalUser);
       } else {
         //check if google user already exists
         User.findOne({'google.email': nEmail}, function(err, existingGoogleUser) { 
@@ -106,7 +106,6 @@ apiRoutes.post('/local-register', function(req,res) {
               success: false,
               message: 'Google account already in use. Please log in through Google.'
             });
-            console.log(existingGoogleUser);
           } else {
             //No existing user ... create account
             var userSalt = Math.random().toString(36).substr(2,10); 
@@ -212,6 +211,95 @@ apiRoutes.post('/local-authenticate', function(req,res) {
     }); //local search
   }
 });
+
+
+/*
+ * Google Strategy Registration - generates UUID for account record
+ * Unique Requires: googleToken
+ * Requires: username, instructor
+ * Optional: institution
+ * Issues:
+ */
+apiRoutes.post('/google-register', function(req,res) {
+
+  //Data Verification
+  var nGoogleToken = req.body.googleToken;
+  var nUsername = req.body.username;
+  var nInstructor = req.body.instructor;
+  var nUUID = uuid.v4();
+
+  if (!nGoogleToken || !nUsername || typeof nInstructor === 'undefined') {
+    res.json({
+      success: false,
+      message: 'One or more required field was missing.',
+      requiredFields: 'googleToken:str, username:str, instructor:bool',
+      optionalFields: 'institution:str'
+    });
+  } else {
+    //Use google token to request more information
+    var concat = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + nGoogleToken;
+    request(concat, function (error, response, body) {
+      if (!error && response.statusCode == 200) { 
+        //Parse google response 
+        var googleAuthBody = JSON.parse(body);
+        var nEmail      = googleAuthBody.email;
+        var nID      = googleAuthBody.email;
+        //Split name from google
+        var nFirstName  = googleAuthBody.name.split(' ').slice(0, -1).join(' ');
+        var nLastName   = googleAuthBody.name.split(' ').slice(-1).join(' ');;
+        //check for existing google account
+        User.findOne({'google.email': nEmail}, function(err, existingGoogleUser) {
+          if (err) throw err;
+
+          if (existingGoogleUser) {
+            res.json({
+              success: false,
+              message: 'Google account already in use. Please log in with Google.'
+            });
+          } else {
+            //check for existing local account under same email
+            User.findOne({'local.email': nEmail}, function(err, existingLocalUser) {
+              if(existingLocalUser) {
+                res.json({
+                  success: false,
+                  message: 'Email associated with the account already in use. Please log in normally.'
+                });
+              } else {
+                //Everything verified, generate new user via Google
+                var nUser = new User({
+                  userID: nUUID,
+                  username: nUsername,
+                  firstName: nFirstName,
+                  lastName: nLastName,
+                  institution: req.body.institution,
+                  instructor: nInstructor,
+                  google: {
+                    email : nEmail
+                  }
+                });
+                console.log(nUser);
+                nUser.save(function(err) {
+                  if (err) throw err;
+
+                  res.json({
+                    success: true,
+                    message: 'New user created via Google.'
+                  });
+                });//user save
+              }
+            });//existing local check
+          }
+        });//existing google check
+      } else {
+        res.json({
+          success     : false,
+          message     : 'Error authenticating with Google.'
+        });
+      }
+    });//google request
+  }
+});//google registration
+
 
 /*
  * Switches string to Title Case formatting. User for correcting capitalization for names.
