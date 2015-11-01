@@ -12,10 +12,13 @@ var UserSchema = new Schema(
 	    institution: String,
 	    instructor: Boolean,
 		local: {
-	        email	: String,
-		    hash	: String, 
-		    salt	: String,
-		    verified: Boolean
+	        email			: String,
+		    hash 			: String, 
+		    salt			: String,
+		    verified 		: Boolean,
+	    	isForgotten 	: Boolean, 
+	    	forgottenID 	: String,
+	    	forgottenSecret : String
 	    },
 		google: {
 	        email	: String

@@ -1,3 +1,11 @@
+/*
+ * AuthServer - an authentication server managing both local and google strategies
+ * Notes:
+ *  - All tokens last for 30 minutes currently to test expiration 
+ * Issues:
+ */
+
+
 // ### Required Packages
 var express     = require('express');
 var app         = express();
@@ -16,6 +24,8 @@ var request     = require('request');
 var port = config.port; 
 mongoose.connect(config.database); 
 app.set('jwtSecret', config.jwtSecret); 
+app.set('tokenExpiration', config.tokenExpiration);
+app.set('googleAuthURLBase', config.googleAuthURLBase);
 //Ensuring input in correct format
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -57,7 +67,7 @@ app.get('/all-users', function(req, res) {
  *    + fields confirmed to exist except insitution 
  *    + email validated, names titlecased
  */
-apiRoutes.post('/local-register', function(req,res) {
+apiRoutes.post('/local/register', function(req,res) {
   //Data Verification
   var nEmail = req.body.email;
   var nUsername = req.body.username;
@@ -121,7 +131,10 @@ apiRoutes.post('/local-register', function(req,res) {
                 email : nEmail,
                 hash  : passHash, 
                 salt  : userSalt, 
-                verified: true
+                verified: true,
+                isForgotten: false,
+                forgottenID   : '',
+                forgottenSecret : ''
               }
             });
 
@@ -144,9 +157,9 @@ apiRoutes.post('/local-register', function(req,res) {
  * Authentication via local strategy.
  * Requires: email, password
  * Issues:
- *  -tokens expire in 30 min (change this!)
+ *  - if forgotten then on authentication clearly not forgotten
  */
-apiRoutes.post('/local-authenticate', function(req,res) {
+apiRoutes.post('/local/authenticate', function(req,res) {
   var candidateEmail = req.body.email;
   var candidatePassword = req.body.password;
   if (!candidateEmail || !candidatePassword) {
@@ -194,9 +207,11 @@ apiRoutes.post('/local-authenticate', function(req,res) {
 
           var token = jwt.sign(tokenBody, app.get('jwtSecret'), {
             algorithm: "HS256", 
-            expiresIn: 1800 //30 min
+            expiresIn: app.get('tokenExpiration')
           });
-
+          // if (localUser.local.isForgotten) {
+          //   localUser
+          // } //////////////////////////////////////////////////////////////
           // return the information including token as JSON
           res.json({
             success     : true,
@@ -214,13 +229,132 @@ apiRoutes.post('/local-authenticate', function(req,res) {
 
 
 /*
+ * Local Strategy Frogot - begins forgotten password workflow
+ * Requires: email
+ */
+apiRoutes.post('/local/forgot', function(req,res) {
+  var candidateEmail = req.body.email;
+  if (!candidateEmail) {
+    res.json({
+      success: false,
+      message: 'One required field was missing.',
+      requiredFields: 'email:str'
+    });
+  } else if (!validEmail(candidateEmail)) {
+    res.json({
+      success: false,
+      message: 'Email invalid.'
+    });
+  } else {
+    User.findOne({'local.email': candidateEmail}, function(err, localUser) {
+      //verify that account exists
+      if (err) throw err;
+      
+      if (!localUser) {
+        //ensure user is not trying to reset password on a google strategy account
+        User.findOne({'google.email': candidateEmail}, function(err, googleUser) {
+          if (googleUser) {
+            res.json({
+              success: false,
+              message: 'Email was registered through Google. Log in with Google'
+            });
+          } else {
+            res.json({
+              success: false,
+              message: 'User does not exist.'
+            });
+          }
+        });//check if google account under same email
+      } else {
+        localUser.local.isForgotten = true;
+        localUser.local.forgottenID = uuid.v1();
+        localUser.save(function(err) {
+          if (err) throw err;
+
+          //send an email with id in link here
+
+          console.log("/api/local/reset/" + localUser.local.forgottenID);
+          var forgottenSecret = Math.random().toString(36).substr(2,10); 
+          console.log("secret: " + forgottenSecret);
+          localUser.local.forgottenSecret = forgottenSecret;
+          localUser.save(function(err) {
+            if (err) throw err;
+
+            res.json({
+              success: true,
+              forgottenSecret: forgottenSecret,
+              message: 'Forgotten password workflow started. Secret attached'
+            });
+          });//save forgotten secret
+        });//save forgotten state
+      }
+    });//check for local user under email
+  }
+});//local forgotten password workflow
+
+
+/*
+ * Local Strategy Reset - resets password using secret and ID
+ * Requires: forgottenID, forgottenSecret, password
+ */
+apiRoutes.post('/local/reset/', function(req, res) {
+  var candidateID = req.body.forgottenID;
+  var candidateSecret = req.body.forgottenSecret;
+  var candidatePassword = req.body.password;
+  if (!candidateID || !candidateSecret || !candidatePassword) {
+    res.json({
+      success: false,
+      message: 'One or more required field was missing.',
+      requiredFields: 'forgottenID:str, forgottenSecret:str, password:str'
+    });
+  } else {
+    console.log("candidateID: " + candidateID);
+    User.findOne({'local.forgottenID': candidateID}, function(err, localUser) {
+      if (err) throw err;
+      
+      if (!localUser) { 
+        res.json({
+          success: false,
+          message: 'forgottenID was invalid'
+        });
+      } else {
+        if (localUser.local.forgottenSecret != candidateSecret) {
+          res.json({
+            success: false,
+            message: 'forgottenSecret was invalid.'
+          });
+        } else {
+          var userSalt = Math.random().toString(36).substr(2,10); 
+          var passHash = sha256(userSalt + candidatePassword);
+          localUser.local.salt = userSalt;
+          localUser.local.hash = passHash;
+          localUser.local.forgottenSecret = '';
+          localUser.local.forgottenID = '';
+          localUser.local.isForgotten = false;
+          localUser.save(function(err) {
+            if (err) throw err;
+
+            res.json({
+              success: true,
+              message: 'Password Reset'
+            });
+          });
+        }
+      }
+    });
+  }
+});
+
+//------------------------------Google Strategy--------------------------------------
+
+/*
  * Google Strategy Registration - generates UUID for account record
  * Unique Requires: googleToken
  * Requires: username, instructor
  * Optional: institution
  * Issues:
  */
-apiRoutes.post('/google-register', function(req,res) {
+apiRoutes.post('/google/register', function(req,res) {
 
   //Data Verification
   var nGoogleToken = req.body.googleToken;
@@ -237,13 +371,12 @@ apiRoutes.post('/google-register', function(req,res) {
     });
   } else {
     //Use google token to request more information
-    var concat = "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=" + nGoogleToken;
+    var concat = app.get('googleAuthURLBase') + nGoogleToken;
     request(concat, function (error, response, body) {
       if (!error && response.statusCode == 200) { 
         //Parse google response 
         var googleAuthBody = JSON.parse(body);
         var nEmail      = googleAuthBody.email;
-        var nID      = googleAuthBody.email;
         //Split name from google
         var nFirstName  = googleAuthBody.name.split(' ').slice(0, -1).join(' ');
         var nLastName   = googleAuthBody.name.split(' ').slice(-1).join(' ');;
@@ -277,7 +410,6 @@ apiRoutes.post('/google-register', function(req,res) {
                     email : nEmail
                   }
                 });
-                console.log(nUser);
                 nUser.save(function(err) {
                   if (err) throw err;
 
@@ -299,6 +431,77 @@ apiRoutes.post('/google-register', function(req,res) {
     });//google request
   }
 });//google registration
+
+
+/*
+ * Google Strategy Registration - generates UUID for account record
+ * Unique Requires: googleToken
+ * Requires: username, instructor
+ * Optional: institution
+ * Issues:
+ *  -check for local strategy before saying no user available
+ */
+apiRoutes.post('/google/authenticate', function(req,res) { 
+  var candidateGoogleToken = req.body.googleToken;
+  if (!candidateGoogleToken) {
+    res.json({
+      success: false,
+      message: 'Required field was missing.',
+      requiredFields: 'googleToken:str'
+    });
+  } else {
+    //Use google token to request more information
+    var concat = app.get('googleAuthURLBase') + candidateGoogleToken;
+    request(concat, function (error, response, body) {
+      if (!error && response.statusCode == 200) { 
+        //Parse google response 
+        var googleAuthBody      = JSON.parse(body);
+        var candidateEmail      = googleAuthBody.email;
+
+        User.findOne({'google.email': candidateEmail}, function(err, googleUser) {
+          if (err) throw err;
+
+          if (googleUser) {
+            var tokenBody = {
+              username  : googleUser.username,
+              uuid      : googleUser.uuid, 
+              info      : 'extra token info would go here'
+            };
+
+            var token = jwt.sign(tokenBody, app.get('jwtSecret'), {
+              algorithm: "HS256", 
+              expiresIn: app.get('tokenExpiration') 
+            });
+            //return the information including token as JSON
+            res.json({
+              success     : true,
+              username    : googleUser.username,
+              firstName   : googleUser.firstName,
+              lastName    : googleUser.lastName,
+              message     : 'Token for Authorization',
+              token       : token
+            });
+          } else {
+            //Check local for existing account
+            User.findOne({'local.email': candidateEmail}, function(err, existingLocalUser) {
+              if(existingLocalUser) {
+                res.json({
+                  success: false,
+                  message: 'Email associated with the account already in use. Please log in normally.'
+                });
+              } else { 
+                res.json({
+                  success: false,
+                  message: 'User does not exist. Please register.'
+                });
+              }
+            });//check for a local user
+          }
+        });//check database for google user
+      }
+    });//request information from Google
+  }
+});//google authentication
 
 
 /*
