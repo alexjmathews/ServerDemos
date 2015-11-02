@@ -4,6 +4,7 @@
  *  - All tokens last for 30 minutes currently to test expiration 
  * Issues:
  *  - Get rid of users route - unsafe as hell LOL 
+ *  - Need to configure CORS: open to all origins currently, also unsafe as hell
  */
 
 
@@ -29,6 +30,8 @@ app.set('jwtSecret', config.jwtSecret);
 app.set('tokenExpiration', config.tokenExpiration);
 app.set('googleAuthURLBase', config.googleAuthURLBase);
 app.set('forgottenIDExpiration', config.forgottenIDExpiration);
+app.set('mailerLocation', config.mailerLocation);
+
 //Ensuring input in correct format
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -84,7 +87,7 @@ apiRoutes.post('/local/register', function(req,res) {
     res.json({
       success: false,
       message: 'One or more required field was missing.',
-      requiredFields: 'email:str (unique), username:str, firstName:stf, lastName:str, password:str, instructor:bool',
+      requiredFields: 'email:str (unique), username:str, firstName:str, lastName:str, password:str, instructor:bool',
       optionalFields: 'institution:str'
     });
   } else if (!validEmail(nEmail)) {
@@ -282,19 +285,40 @@ apiRoutes.post('/local/forgot', function(req,res) {
           //send an email with id in link here
 
           var forgottenSecret = Math.random().toString(36).substr(2,10); 
-          localUser.local.forgottenSecret = forgottenSecret;
-          localUser.save(function(err) {
-            if (err) throw err;
-            
-            setTimeout(function () {
-              emitter.emit('forgottenIDExpired', localUser.local.forgottenID);
-            }, app.get('forgottenIDExpiration'));
-            res.json({
-              success: true,
-              forgottenSecret: forgottenSecret,
-              message: 'Forgotten password workflow started. Secret attached'
-            });
-          });//save forgotten secret
+
+          var options = {
+            uri: app.get('mailerLocation') + '/email/password-reset',
+            method: 'POST',
+            json: {
+              "secret": forgottenSecret, 
+              "id": localUser.local.forgottenID,
+              "email": localUser.local.email
+            }
+          };
+          request(options, function (error, response, body) {
+            if (error && response.statusCode != 200) {
+              res.json({
+                success: false,
+                message: 'Error sending verification email.'
+              });
+            } else {
+              var secHash = sha256(localUser.local.salt + forgottenSecret);
+              localUser.local.forgottenSecret = secHash;
+
+              localUser.save(function(err) {
+                if (err) throw err;
+                
+                setTimeout(function () {
+                  emitter.emit('forgottenIDExpired', localUser.local.forgottenID);
+                }, app.get('forgottenIDExpiration'));
+                res.json({
+                  success: true,
+                  forgottenSecret: forgottenSecret,
+                  message: 'Forgotten password workflow started. Secret attached'
+                });
+              });//save forgotten secret
+            }
+          });//send email
         });//save forgotten state
       }
     });//check for local user under email
@@ -347,7 +371,9 @@ apiRoutes.post('/local/reset/', function(req, res) {
           message: 'forgottenID was invalid'
         });
       } else {
-        if (localUser.local.forgottenSecret != candidateSecret) {
+
+        var candidateSecHash = sha256(localUser.local.salt + candidateSecret);
+        if (localUser.local.forgottenSecret != candidateSecHash) {
           res.json({
             success: false,
             message: 'forgottenSecret was invalid.'

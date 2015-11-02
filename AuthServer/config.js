@@ -4,5 +4,6 @@ module.exports = {
     'port': 8080, 
     'tokenExpiration' : 1800, 
     'googleAuthURLBase' : "https://www.googleapis.com/oauth2/v3/tokeninfo?id_token=", 
-    'forgottenIDExpiration' : 5000
+    'mailerLocation' : "http://localhost:7070/api",
+    'forgottenIDExpiration' : 60000
 };
